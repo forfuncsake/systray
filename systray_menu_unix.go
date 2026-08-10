@@ -26,7 +26,7 @@ func (item *MenuItem) SetIcon(iconBytes []byte) {
 		emitItemPropertiesUpdated(int32(item.id), m.V1)
 		// Property-only change; per spec LayoutUpdated isn't required here,
 		// but kept as a fallback for clients that only watch LayoutUpdated.
-		refresh()
+		refresh(false)
 	}
 }
 
@@ -85,7 +85,7 @@ func (t *tray) GetLayout(parentID int32, recursionDepth int32, propertyNames []s
 			depth = 1
 			go func() {
 				time.Sleep(150 * time.Millisecond)
-				refresh()
+				refresh(true)
 			}()
 		}
 		// return copy of menu layout to prevent panic from cuncurrent access to layout
@@ -259,7 +259,7 @@ func addOrUpdateMenuItem(item *MenuItem) {
 		emitItemPropertiesUpdated(int32(item.id), layout.V1)
 		// Property-only change on an existing item; per spec LayoutUpdated isn't required here,
 		// but kept as a fallback for clients that only watch LayoutUpdated.
-		refresh()
+		refresh(false)
 	} else {
 		// We've added "children-display", that's a property change
 		if parentForChildrenDisplayUpdate != nil {
@@ -267,7 +267,7 @@ func addOrUpdateMenuItem(item *MenuItem) {
 		}
 		// New item appended to a parent's children,
 		// that's a structural change, so LayoutUpdated signal is required
-		refresh()
+		refresh(true)
 	}
 }
 
@@ -284,7 +284,7 @@ func addSeparator(id uint32, parent uint32) {
 		V2: []dbus.Variant{},
 	}
 	menu.V2 = append(menu.V2, dbus.MakeVariant(layout))
-	refresh()
+	refresh(true)
 }
 
 // dbusKeyNames maps the platform neutral key names used by SetShortcut to the
@@ -433,7 +433,7 @@ func removeMenuItem(item *MenuItem) {
 
 	if items, removed := removeSubLayout(int32(item.id), parent.V2); removed {
 		parent.V2 = items
-		refresh()
+		refresh(true)
 	}
 }
 
@@ -446,7 +446,7 @@ func hideMenuItem(item *MenuItem) {
 		emitItemPropertiesUpdated(int32(item.id), m.V1)
 		// Property-only change; per spec LayoutUpdated isn't required here,
 		// but kept as a fallback for clients that only watch LayoutUpdated.
-		refresh()
+		refresh(false)
 	}
 }
 
@@ -459,7 +459,7 @@ func showMenuItem(item *MenuItem) {
 		emitItemPropertiesUpdated(int32(item.id), m.V1)
 		// Property-only change; per spec LayoutUpdated isn't required here,
 		// but kept as a fallback for clients that only watch LayoutUpdated.
-		refresh()
+		refresh(false)
 	}
 }
 
@@ -487,7 +487,12 @@ func emitItemPropertiesUpdated(id int32, props map[string]dbus.Variant) {
 	}
 }
 
-func refresh() {
+// refresh emits the dbusmenu LayoutUpdated signal. layoutUpdated is false for
+// property-only changes, which are suppressed once SetOptimizeMenuUpdates is on.
+func refresh(layoutUpdated bool) {
+	if !layoutUpdated && optimizeMenuUpdates.Load() {
+		return
+	}
 	instance.lock.Lock()
 	defer instance.lock.Unlock()
 	if instance.conn == nil || instance.menuProps == nil {
@@ -517,5 +522,5 @@ func resetMenu() {
 	instance.menu = &menuLayout{}
 	instance.menuVersion++
 	firstGetLayoutDone = false
-	refresh()
+	refresh(true)
 }
